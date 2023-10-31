@@ -1,0 +1,71 @@
+require 'ecdsa'
+
+public_key_hex = '02a50eb66887d03fe186b608f477d99bc7631c56e64bb3af7dc97e71b917c5b364'
+msghash1_hex = '01b125d18422cdfa7b153f5bcf5b01927cf59791d1d9810009c70cd37b14f4e6'
+msghash2_hex = '339ff7b1ced3a45c988b3e4e239ea745db3b2b3fda6208134691bd2e4a37d6e1'
+sig1_hex = '304402200861cce1da15fc2dd79f1164c4f7b3e6c1526e7e8d85716578689ca9a5dc349d02206cf26e2776f7c94cafcee05cc810471ddca16fa864d13d57bee1c06ce39a3188'
+sig2_hex = '304402200861cce1da15fc2dd79f1164c4f7b3e6c1526e7e8d85716578689ca9a5dc349d02204ba75bdda43b3aab84b895cfd9ef13a477182657faaf286a7b0d25f0cb9a7de2'
+
+group = ECDSA::Group::Secp256k1
+
+def hex_to_binary(str)
+  str.scan(/../).map(&:hex).pack('C*')
+end
+
+public_key_str = hex_to_binary(public_key_hex)
+public_key = ECDSA::Format::PointOctetString.decode(public_key_str, group)
+
+puts 'public key x: %#x' % public_key.x
+puts 'public key y: %#x' % public_key.y
+
+msghash1 = hex_to_binary(msghash1_hex)
+msghash2 = hex_to_binary(msghash2_hex)
+sig1 = ECDSA::Format::SignatureDerString.decode(hex_to_binary(sig1_hex))
+sig2 = ECDSA::Format::SignatureDerString.decode(hex_to_binary(sig2_hex))
+
+raise 'R values are not the same' if sig1.r != sig2.r
+
+r = sig1.r
+puts 'sig r: %#x' % r
+puts 'sig1 s: %#x' % sig1.s
+puts 'sig2 s: %#x' % sig2.s
+
+sig1_valid = ECDSA.valid_signature?(public_key, msghash1, sig1)
+sig2_valid = ECDSA.valid_signature?(public_key, msghash2, sig2)
+puts "sig1 valid: #{sig1_valid}"
+puts "sig2 valid: #{sig2_valid}"
+
+# Step 1: k = (z1 - z2)/(s1 - s2)
+field = ECDSA::PrimeField.new(group.order)
+z1 = ECDSA::Format::IntegerOctetString.decode(msghash1)
+z2 = ECDSA::Format::IntegerOctetString.decode(msghash2)
+
+k_candidates = [
+  field.mod((z1 - z2) * field.inverse(sig1.s - sig2.s)),
+  field.mod((z1 - z2) * field.inverse(sig1.s + sig2.s)),
+  field.mod((z1 - z2) * field.inverse(-sig1.s - sig2.s)),
+  field.mod((z1 - z2) * field.inverse(-sig1.s + sig2.s)),
+]
+
+private_key = nil
+k_candidates.each do |k|
+  next unless group.new_point(k).x == r
+  private_key_maybe = field.mod(field.mod(sig1.s * k - z1) * field.inverse(r))
+  if public_key == group.new_point(private_key_maybe)
+    private_key = private_key_maybe
+  end
+end
+
+/*
+puts 'private key: %#x' % private_key
+The output of the program is:
+
+public key x: 0xa50eb66887d03fe186b608f477d99bc7631c56e64bb3af7dc97e71b917c5b364
+public key y: 0x7954da3444d33b8d1f90a0d7168b2f158a2c96db46733286619fccaafbaca6bc
+sig r: 0x861cce1da15fc2dd79f1164c4f7b3e6c1526e7e8d85716578689ca9a5dc349d
+sig1 s: 0x6cf26e2776f7c94cafcee05cc810471ddca16fa864d13d57bee1c06ce39a3188
+sig2 s: 0x4ba75bdda43b3aab84b895cfd9ef13a477182657faaf286a7b0d25f0cb9a7de2
+sig1 valid: true
+sig2 valid: true
+private key: 0xe773cf35fce567d0622203c28f67478a3361bae7e6eb4366b50e1d27eb1ed82e
+*/
