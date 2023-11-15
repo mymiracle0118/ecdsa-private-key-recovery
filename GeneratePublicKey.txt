@@ -1,0 +1,19 @@
+const Web3 = require("web3"); // Optional : here only for the address recovery example
+const { TransactionFactory } = require("@ethereumjs/tx");
+
+const TX_DATA = "0x02f87501833c636a843b9aca008512a05f200082520894f5c238dd768de69c0f4f9d1e08bbf497029326698741ca84c07b6a0080c080a02d49f0b49cb718f8ef403e22b21ff8f488553a4f96f77482e08912e3b24d8647a008faa0e1caafff5ddf1366248e590eee99612b1d0b590ee41af7a2c3d92bfeed";
+
+function recoverPublicKey(rawTx) {
+  const data = Buffer.from(rawTx.slice(2), "hex");
+  const tx = TransactionFactory.fromSerializedData(data);
+
+  return tx.getSenderPublicKey().toString("hex");
+}
+
+const publicKey = recoverPublicKey(TX_DATA);
+console.log("Public key : " + publicKey);
+
+// To compute the address from the public key :
+const pubHash = Web3.utils.soliditySha3("0x" + publicKey);
+console.log("Address : " + "0x" + pubHash.slice(-40));
+// 0x00192fb10df37c9fb26829eb2cc623cd1bf599e8
